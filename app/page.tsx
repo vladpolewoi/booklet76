@@ -86,50 +86,6 @@ export default function Home() {
 		URL.revokeObjectURL(url)
 	}
 
-	const shuffle = () => {
-		// array from 1 to 20
-		const arr = Array.from(Array(36).keys()).map((i) => i + 1)
-		const SHEET_COUNT = 2
-		const PAGES_COUNT = SHEET_COUNT * 4
-
-		// I will use 2 moving pointer technique
-		// for each iteration of PAGES_COUNT
-		const booklet = []
-		for (let i = 0; i < arr.length / PAGES_COUNT; i++) {
-			let x = i * PAGES_COUNT // left pointer
-			let y = (i + 1) * PAGES_COUNT - 1 // right pointer
-
-			// if last iteration move y to last element
-			if (i === Math.floor(arr.length / PAGES_COUNT)) {
-				y = x - 1 + (arr.length % 20)
-			}
-
-			console.log("I:", x, y)
-
-			if (y - x < 4) {
-				booklet.push(["e", arr[x]])
-				booklet.push([arr[y - 1], arr[x + 1]])
-			}
-
-			const even = []
-			const odd = []
-
-			while (x != y && x < y) {
-				if (x % 2) {
-					odd.push([arr[x], arr[y]])
-				} else {
-					even.push([arr[y], arr[x]])
-				}
-
-				x += 1
-				y -= 1
-			}
-
-			booklet.push(...even, ...odd)
-		}
-		console.log(booklet)
-	}
-
 	return (
 		<div className="dark flex items-center justify-center w-full h-dvh">
 			<Card className="w-80">
@@ -143,9 +99,7 @@ export default function Home() {
 				</CardContent>
 				<CardFooter>
 					<div className="flex gap-x-4 items-center w-full">
-						<Button className="w-full" onClick={shuffle}>
-							Process
-						</Button>
+						<Button className="w-full">Process</Button>
 						<Button
 							disabled={!modifiedPdfBytes}
 							className="w-full bg-blue-700"

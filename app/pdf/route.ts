@@ -9,16 +9,23 @@ export async function POST(req: Request) {
 	const newPDF = await PDFDocument.create()
 
 	const booklet = shuffle(pdfDoc.getPageCount())
-
+	console.log("DEBUG", pdfDoc.getPageCount(), booklet)
 	for (const [left, right] of booklet) {
 		let leftPage
 		let rightPage
+
 		try {
 			leftPage = await newPDF.copyPages(pdfDoc, [left])
+		} catch (e) {
+			console.log(e)
+		}
+
+		try {
 			rightPage = await newPDF.copyPages(pdfDoc, [right])
 		} catch (e) {
 			console.log(e)
 		}
+
 		newPDF.addPage(leftPage?.[0])
 		newPDF.addPage(rightPage?.[0])
 	}
@@ -45,7 +52,8 @@ export async function POST(req: Request) {
 function shuffle(count: number) {
 	const arr = Array.from(Array(count).keys()).map((i) => i)
 	const SHEET_COUNT = 5
-	const PAGES_COUNT = SHEET_COUNT * 4
+	const PAGES_PER_SHEET = 4
+	const PAGES_COUNT = SHEET_COUNT * PAGES_PER_SHEET
 
 	// I will use 2 moving pointer technique
 	// for each iteration of PAGES_COUNT
@@ -55,9 +63,10 @@ function shuffle(count: number) {
 		let y = (i + 1) * PAGES_COUNT - 1 // right pointer
 
 		// if last iteration move y to last element
-		// if (i === Math.floor(arr.length / PAGES_COUNT)) {
-		// 	y = x - 1 + (arr.length % 20)
-		// }
+		// and add to first % 4 = 0
+		if (y > arr.length - 1) {
+			y = arr.length - 1 + PAGES_PER_SHEET - (arr.length % PAGES_PER_SHEET)
+		}
 
 		const even = []
 		const odd = []
