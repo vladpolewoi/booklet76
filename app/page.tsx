@@ -18,18 +18,11 @@ export default function Home() {
   const [status, setStatus] = useState('Ready to process')
   const [modifiedPdfBytes, setModifiedPdfBytes] = useState(null)
   const [sheetCount, setSheetCount] = useState(5)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [fileName, setFileName] = useState('')
   const { toast } = useToast()
-  // const fileURL = window.URL.createObjectURL(blob)
-
-  // // Setting various property values
-  // let alink = document.createElement("a")
-  // alink.href = fileURL
-  // alink.download = "SamplePDF.pdf"
-  // alink.click()
 
   const onFileSelect = (value: any) => {
-    setStatus('Processing...')
-
     const file = value.target.files[0]
 
     if (file.type !== 'application/pdf') {
@@ -38,16 +31,23 @@ export default function Home() {
         description: 'Please select a pdf file',
         variant: 'destructive',
       })
-
       return
     }
 
+    setSelectedFile(file)
+    setFileName(file.name)
+    setStatus('Ready to process')
+  }
+
+  const handleProcess = async () => {
+    if (!selectedFile) return
+
+    setStatus('Processing...')
     const reader = new FileReader()
 
     reader.onload = async (e) => {
       const pdf = e.target?.result
 
-      console.log(pdf)
       const res = await fetch('/pdf', {
         method: 'POST',
         headers: {
@@ -58,15 +58,11 @@ export default function Home() {
       })
 
       const data = await res.json()
-
-      console.log(data)
-
       setStatus(data.status)
-
       setModifiedPdfBytes(data.pdf)
     }
 
-    reader.readAsArrayBuffer(file)
+    reader.readAsArrayBuffer(selectedFile)
   }
 
   const handleDownload = () => {
@@ -81,7 +77,8 @@ export default function Home() {
 
     const a = document.createElement('a')
     a.href = url
-    a.download = 'modified_booklet.pdf'
+    const bookletName = fileName.replace('.pdf', '-booklet.pdf')
+    a.download = bookletName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -112,7 +109,13 @@ export default function Home() {
         </CardContent>
         <CardFooter>
           <div className='flex gap-x-4 items-center w-full'>
-            <Button className='w-full'>Process</Button>
+            <Button
+              className='w-full'
+              onClick={handleProcess}
+              disabled={!selectedFile}
+            >
+              Process
+            </Button>
             <Button
               disabled={!modifiedPdfBytes}
               className='w-full bg-blue-700'
