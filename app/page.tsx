@@ -11,19 +11,30 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/use-toast'
-import Image from 'next/image'
-import { cloneElement, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export default function Home() {
   const [status, setStatus] = useState('Ready to process')
-  const [modifiedPdfBytes, setModifiedPdfBytes] = useState(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [bookletUrl, setBookletUrl] = useState<string | null>(null)
   const [sheetCount, setSheetCount] = useState(5)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [fileName, setFileName] = useState('')
   const { toast } = useToast()
 
-  const onFileSelect = (value: any) => {
-    const file = value.target.files[0]
+  // Revoke the previous object URL whenever it is replaced or the page unmounts.
+  const urlRef = useRef<string | null>(null)
+  useEffect(() => {
+    urlRef.current = bookletUrl
+    return () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    }
+  }, [bookletUrl])
+
+  const clearBooklet = () => setBookletUrl(null)
+
+  const onFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
 
     if (file.type !== 'application/pdf') {
       toast({
@@ -35,54 +46,57 @@ export default function Home() {
     }
 
     setSelectedFile(file)
-    setFileName(file.name)
+    clearBooklet()
     setStatus('Ready to process')
   }
 
   const handleProcess = async () => {
-    if (!selectedFile) return
+    if (!selectedFile || isProcessing) return
 
+    setIsProcessing(true)
+    clearBooklet()
     setStatus('Processing...')
-    const reader = new FileReader()
 
-    reader.onload = async (e) => {
-      const pdf = e.target?.result
-
+    try {
       const res = await fetch('/pdf', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Sheet-Count': sheetCount.toString(),
+          'Content-Type': 'application/pdf',
+          'X-Sheet-Count': String(sheetCount),
         },
-        body: pdf,
+        body: selectedFile,
       })
 
-      const data = await res.json()
-      setStatus(data.status)
-      setModifiedPdfBytes(data.pdf)
-    }
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: null }))
+        throw new Error(error || `Server returned ${res.status}`)
+      }
 
-    reader.readAsArrayBuffer(selectedFile)
+      const blob = await res.blob()
+      setBookletUrl(URL.createObjectURL(blob))
+      setStatus(`Success — ${res.headers.get('X-Booklet-Pages')} pages`)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error'
+      setStatus('Failed')
+      toast({
+        title: 'Could not build the booklet',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handleDownload = () => {
-    if (!modifiedPdfBytes) {
-      return
-    }
-    const byteArray = Uint8Array.from(atob(modifiedPdfBytes), (char) =>
-      char.charCodeAt(0)
-    )
-    const blob = new Blob([byteArray], { type: 'application/pdf' })
-    const url = URL.createObjectURL(blob)
+    if (!bookletUrl || !selectedFile) return
 
     const a = document.createElement('a')
-    a.href = url
-    const bookletName = fileName.replace('.pdf', '-booklet.pdf')
-    a.download = bookletName
+    a.href = bookletUrl
+    a.download = selectedFile.name.replace(/\.pdf$/i, '') + '-booklet.pdf'
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
   }
 
   return (
@@ -93,7 +107,7 @@ export default function Home() {
           <CardDescription>Convert PDF to Booklet</CardDescription>
         </CardHeader>
         <CardContent>
-          <Input type='file' onChange={onFileSelect} />
+          <Input type='file' accept='application/pdf' onChange={onFileSelect} />
           <div className='mt-4'>Status: {status}</div>
           <label htmlFor='sheetCount' className='mt-4 block text-sm'>
             Sheet Count:
@@ -102,7 +116,10 @@ export default function Home() {
             id='sheetCount'
             type='number'
             value={sheetCount}
-            onChange={(e) => setSheetCount(Number(e.target.value))}
+            onChange={(e) => {
+              setSheetCount(Math.max(1, Number(e.target.value) || 1))
+              clearBooklet()
+            }}
             min='1'
             className='mt-2'
           />
@@ -112,12 +129,12 @@ export default function Home() {
             <Button
               className='w-full'
               onClick={handleProcess}
-              disabled={!selectedFile}
+              disabled={!selectedFile || isProcessing}
             >
-              Process
+              {isProcessing ? 'Working…' : 'Process'}
             </Button>
             <Button
-              disabled={!modifiedPdfBytes}
+              disabled={!bookletUrl}
               className='w-full bg-blue-700'
               onClick={handleDownload}
             >
