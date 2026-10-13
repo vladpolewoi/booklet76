@@ -9,10 +9,16 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 /** A blank filler page in the imposed order. */
 const BLANK = -1
 
+type Layout = 'booklet' | 'cutstack'
+
 export async function POST(req: Request) {
   const sheetCount = parseInt(req.headers.get('X-Sheet-Count') || '5', 10)
   if (!Number.isFinite(sheetCount) || sheetCount < 1) {
     return jsonError('Sheet count must be a positive integer', 400)
+  }
+  const layout = (req.headers.get('X-Layout') || 'booklet') as Layout
+  if (layout !== 'booklet' && layout !== 'cutstack') {
+    return jsonError(`Unknown layout ${layout}`, 400)
   }
 
   const pdfBytes = await req.arrayBuffer()
@@ -33,7 +39,10 @@ export async function POST(req: Request) {
   const pageCount = srcDoc.getPageCount()
   if (pageCount === 0) return jsonError('PDF has no pages', 400)
 
-  const order = impose(pageCount, sheetCount)
+  const order =
+    layout === 'cutstack'
+      ? cutStack(pageCount, sheetCount)
+      : impose(pageCount, sheetCount)
 
   const bookletDoc = await PDFDocument.create()
 
@@ -65,6 +74,8 @@ export async function POST(req: Request) {
       'Content-Disposition': 'attachment; filename="booklet.pdf"',
       'Content-Length': String(bytes.length),
       'X-Booklet-Pages': String(order.length),
+      'X-Blank-Pages': String(order.filter((i) => i === BLANK).length),
+      'X-Second-Half': String(roundUpToSheet(pageCount) / 2 + 1),
     },
   })
 }
@@ -110,6 +121,44 @@ function impose(pageCount: number, sheetCount: number): number[] {
 
       left += 1
       right -= 1
+    }
+
+    order.push(...fronts, ...backs)
+  }
+
+  return order
+}
+
+/**
+ * Imposition order for cut-and-stack: the whole document is ONE stack of sheets,
+ * cut in half when printed. Each sheet carries a page from the first half of the
+ * book on its left and the matching page of the second half on its right, so
+ * after the cut the left pile reads 1..H and the right pile H+1..2H, top to
+ * bottom. Put the left pile on the right pile and the book is in order.
+ *
+ * For 16 pages (4 sheets, H = 8) the sheets carry 1|9, 3|11, 5|13, 7|15 on the
+ * front and 10|2, 12|4, 14|6, 16|8 on the back -- a back's left half sits behind
+ * its front's right half, the same short-edge flip as the booklet layout.
+ *
+ * Sheets go to the printer in batches of `batchSheets`, fronts first, then
+ * backs, exactly like a signature in the booklet layout, so the same manual
+ * duplex routine works; a batch of 1 interleaves front, back for a duplex
+ * printer. BLANK fills the end of the second half when the page count is not a
+ * multiple of 4.
+ */
+function cutStack(pageCount: number, batchSheets: number): number[] {
+  const total = roundUpToSheet(pageCount)
+  const sheets = total / PAGES_PER_SHEET
+  const half = total / 2
+  const order: number[] = []
+
+  for (let first = 0; first < sheets; first += batchSheets) {
+    const fronts: number[] = []
+    const backs: number[] = []
+
+    for (let s = first; s < Math.min(first + batchSheets, sheets); s++) {
+      fronts.push(pageAt(2 * s, pageCount), pageAt(half + 2 * s, pageCount))
+      backs.push(pageAt(half + 2 * s + 1, pageCount), pageAt(2 * s + 1, pageCount))
     }
 
     order.push(...fronts, ...backs)

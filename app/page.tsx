@@ -18,6 +18,7 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [bookletUrl, setBookletUrl] = useState<string | null>(null)
   const [sheetCount, setSheetCount] = useState(5)
+  const [layout, setLayout] = useState<'booklet' | 'cutstack'>('cutstack')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
 
@@ -63,6 +64,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/pdf',
           'X-Sheet-Count': String(sheetCount),
+          'X-Layout': layout,
         },
         body: selectedFile,
       })
@@ -74,7 +76,14 @@ export default function Home() {
 
       const blob = await res.blob()
       setBookletUrl(URL.createObjectURL(blob))
-      setStatus(`Success — ${res.headers.get('X-Booklet-Pages')} pages`)
+      const pages = res.headers.get('X-Booklet-Pages')
+      const blanks = Number(res.headers.get('X-Blank-Pages') || 0)
+      const filler = blanks ? `, ${blanks} blank at the end` : ''
+      setStatus(
+        layout === 'cutstack'
+          ? `${pages} pages${filler}. Cut the stack, put the page 1 pile on the page ${res.headers.get('X-Second-Half')} pile.`
+          : `Success — ${pages} pages${filler}`
+      )
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown error'
       setStatus('Failed')
@@ -109,8 +118,30 @@ export default function Home() {
         <CardContent>
           <Input type='file' accept='application/pdf' onChange={onFileSelect} />
           <div className='mt-4'>Status: {status}</div>
+          <div className='mt-4 flex gap-x-2'>
+            {(
+              [
+                ['cutstack', 'Cut & stack'],
+                ['booklet', 'Fold'],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                variant={layout === value ? 'default' : 'outline'}
+                className='w-full'
+                onClick={() => {
+                  setLayout(value)
+                  clearBooklet()
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
           <label htmlFor='sheetCount' className='mt-4 block text-sm'>
-            Sheet Count:
+            {layout === 'cutstack'
+              ? 'Sheets per print batch (1 = auto duplex):'
+              : 'Sheets per signature:'}
           </label>
           <Input
             id='sheetCount'
